@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Revisión Offline-First (Meta 1.7)</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        /* Estilos básicos para el MVP */
+        body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        /* Navegación para simular roles */
+        nav { margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        button { padding: 10px 15px; cursor: pointer; background: #0056b3; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #004494; }
+        button.secondary { background: #6c757d; }
+        
+        /* Clase para ocultar vistas */
+        .hidden { display: none; }
+        
+        h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        
+        .status-badge {
+            background: #e2e3e5; padding: 3px 8px; border-radius: 10px; font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Gestión de Artículos PWA</h1>
+    
+    <nav id="role-selector">
+        <p>Selecciona tu rol (Simulación):</p>
+        <button onclick="navigate('editor')">Soy Editor</button>
+        <button onclick="navigate('revisor')">Soy Revisor</button>
+        <button onclick="navigate('autor')">Soy Autor</button>
+    </nav>
+
+    <section id="view-editor" class="view hidden">
+        <h2>Dashboard del Editor</h2>
+        <div style="margin-bottom: 10px;">
+            <input type="text" id="new-article-title" placeholder="Título del nuevo artículo" style="padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px;">
+            
+            <label style="font-size: 0.9em; color: #555;">Adjuntar documento (PDF):</label><br>
+            <input type="file" id="new-article-file" accept="application/pdf" style="margin-bottom: 15px; margin-top: 5px;">
+            <br>
+            
+            <button onclick="addArticle()">Registrar Artículo</button>
+        </div>
+        <div id="editor-article-list">
+            <p><i>Cargando lista local...</i></p>
+        </div>
+        <br>
+        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+    </section>
+
+    <section id="view-revisor" class="view hidden">
+        <h2>Módulo de Revisor (Offline-First)</h2>
+        <p style="color: green; font-size: 0.9em;">✅ Los datos se guardan en tu dispositivo (IndexedDB).</p>
+        
+        <form id="review-form">
+            <label>Seleccionar Artículo a Revisar:</label>
+            <select id="review-article-select" style="padding: 8px; width: 100%; margin-bottom: 10px;">
+                <option value="">-- Cargar artículos pendientes --</option>
+            </select>
+            
+            <label>Comentarios:</label><br>
+            <textarea id="review-comments" rows="5" style="width:100%; margin-bottom: 10px;" placeholder="Escribe tu evaluación aquí..."></textarea>
+            
+            <label>Decisión:</label>
+            <select id="review-decision" style="padding: 8px;">
+                <option value="pending">Pendiente</option>
+                <option value="approved">Aprobado</option>
+                <option value="rejected">Rechazado</option>
+            </select>
+            <br><br>
+            
+            <button type="button" onclick="saveReviewOffline()">Guardar Borrador (Offline)</button>
+            <button type="button" onclick="syncReviews()" style="background-color: #28a745;">☁️ Sincronizar/Enviar</button>
+        </form>
+        <br>
+        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+    </section>
+
+    <section id="view-autor" class="view hidden">
+        <h2>Consultar Estado</h2>
+        <input type="text" id="author-search-id" placeholder="Nombre del artículo" style="padding: 8px;">
+        <button onclick="searchArticleStatus()">Buscar</button>
+        <div id="author-result" style="margin-top: 15px; padding: 10px; background: #e9ecef; border-radius: 4px;">
+            Esperando consulta...
+        </div>
+        <br>
+        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+    </section>
+</div>
+
+<script>
+    // --- 0. REGISTRO SERVICE WORKER (PWA) ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('Service Worker registrado:', reg.scope))
+                .catch(err => console.log('Error SW:', err));
+        });
+    }
+
+    // --- 1. BASE DE DATOS (IndexedDB) ---
+    let db;
+    const request = indexedDB.open("SistemaRevisionMVP", 1);
+
+    request.onupgradeneeded = function(event) {
+        db = event.target.result;
+        if (!db.objectStoreNames.contains('evaluaciones')) {
+            db.createObjectStore('evaluaciones', { keyPath: 'id', autoIncrement: true });
+        }
+    };
+
+    request.onsuccess = function(event) {
+        db = event.target.result;
+        console.log("BD Offline Lista");
+    };
+
+    request.onerror = function(event) {
+        console.log("Error en BD:", event);
+    };
+
+    // --- 2. LÓGICA EDITOR (LocalStorage) ---
+    function addArticle() {
+        const title = document.getElementById('new-article-title').value.trim();
+        if (!title) return alert("Escribe un título");
+
+        let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        
+        articles.push({ 
+            id: Date.now(), 
+            title: title, 
+            status: 'En Revisión' 
+        });
+        
+        localStorage.setItem('articulos', JSON.stringify(articles));
+        
+        alert("Artículo registrado correctamente.");
+        document.getElementById('new-article-title').value = ""; 
+        renderEditorList(); 
+    }
+
+    function renderEditorList() {
+        const list = document.getElementById('editor-article-list');
+        const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        
+        if (articles.length === 0) {
+            list.innerHTML = "<p>No hay artículos registrados.</p>";
+            return;
+        }
+
+        list.innerHTML = articles.map(art => 
+            `<div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
+                <strong>${art.title}</strong> 
+                <span class="status-badge">${art.status}</span>
+             </div>`
+        ).join('');
+    }
+
+    // --- 3. LÓGICA REVISOR (Offline-First / IndexedDB) ---
+    function loadArticlesToSelect() {
+        const select = document.getElementById('review-article-select');
+        const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        
+        select.innerHTML = '<option value="">-- Seleccionar Artículo --</option>' + 
+            articles.map(a => `<option value="${a.title}">${a.title}</option>`).join('');
+    }
+
+    function saveReviewOffline() {
+        const articleTitle = document.getElementById('review-article-select').value;
+        const comments = document.getElementById('review-comments').value.trim();
+        const decision = document.getElementById('review-decision').value;
+
+        if (!articleTitle) return alert("Debes seleccionar un artículo.");
+        if (!comments) return alert("Debes escribir tus comentarios.");
+
+        const transaction = db.transaction(['evaluaciones'], 'readwrite');
+        const store = transaction.objectStore('evaluaciones');
+        
+        // REFACTORIZACIÓN META 1.7: Se agrega sync_status
+        const review = {
+            articulo: articleTitle,
+            comentarios: comments,
+            decision: decision,
+            fecha: new Date().toISOString(),
+            sync_status: 'pending' // Bandera para la sincronización con el servidor
+        };
+
+        const request = store.add(review);
+
+        request.onsuccess = function() {
+            alert("✅ Borrador guardado localmente (IndexedDB). Estado: Pendiente de sincronización.");
+            document.getElementById('review-comments').value = "";
+        };
+
+        request.onerror = function() {
+            alert("Error al guardar.");
+        };
+    }
+
+    // NUEVO INCREMENTO META 1.7: Sincronización real con backend Node.js
+    async function syncReviews() {
+        const transaction = db.transaction(['evaluaciones'], 'readwrite');
+        const store = transaction.objectStore('evaluaciones');
+        const getAllRequest = store.getAll();
+
+        getAllRequest.onsuccess = async function() {
+            const todasLasRevisiones = getAllRequest.result;
+            
+            // Filtramos solo los registros que no se han enviado a MariaDB
+            const pendientes = todasLasRevisiones.filter(r => r.sync_status === 'pending');
+
+            if (pendientes.length === 0) {
+                return alert("No hay revisiones pendientes de sincronizar.");
+            }
+
+            try {
+                alert(`🚀 Iniciando sincronización de ${pendientes.length} revisiones al servidor...`);
+                
+                // Enviamos los datos al backend (Node.js)
+                const response = await fetch('http://localhost:3000/api/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pendientes)
+                });
+
+                if (response.ok) {
+                    // Si el servidor responde 200 OK, actualizamos IndexedDB a 'synced'
+                    const updateTx = db.transaction(['evaluaciones'], 'readwrite');
+                    const updateStore = updateTx.objectStore('evaluaciones');
+                    
+                    pendientes.forEach(rev => {
+                        rev.sync_status = 'synced';
+                        updateStore.put(rev); // Actualiza el registro local
+                    });
+                    
+                    alert("☁️ ¡Sincronización exitosa! Datos guardados en MariaDB.");
+                } else {
+                    throw new Error("El servidor rechazó los datos.");
+                }
+            } catch (error) {
+                console.error("Fallo de sincronización:", error);
+                alert("❌ Error de red o el servidor Node.js está apagado. Tus datos siguen seguros localmente. Intenta más tarde.");
+            }
+        };
+    }
+
+    // --- 4. LÓGICA AUTOR (Búsqueda simple) ---
+    function searchArticleStatus() {
+        const query = document.getElementById('author-search-id').value.toLowerCase();
+        const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        const resultBox = document.getElementById('author-result');
+
+        const found = articles.find(a => a.title.toLowerCase().includes(query));
+
+        if (found) {
+            resultBox.innerHTML = `
+                <strong>Artículo:</strong> ${found.title}<br>
+                <strong>Estado:</strong> ${found.status}<br>
+                <small>ID: ${found.id}</small>
+            `;
+            resultBox.style.background = "#d4edda"; 
+        } else {
+            resultBox.innerHTML = "No se encontró ningún artículo con ese nombre.";
+            resultBox.style.background = "#f8d7da"; 
+        }
+    }
+
+    // --- 5. NAVEGACIÓN ---
+    function navigate(viewName) {
+        document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
+        document.getElementById('role-selector').classList.add('hidden');
+
+        if (viewName === 'home') {
+            document.getElementById('role-selector').classList.remove('hidden');
+        } else {
+            const viewId = `view-${viewName}`;
+            const viewEl = document.getElementById(viewId);
+            if(viewEl) viewEl.classList.remove('hidden');
+            
+            // Cargar datos específicos al entrar a la vista
+            if (viewName === 'editor') renderEditorList();
+            if (viewName === 'revisor') loadArticlesToSelect();
+        }
+    }
+</script>
+
+</body>
+</html>
