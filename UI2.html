@@ -3,292 +3,515 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Revisión Offline-First (Meta 1.7)</title>
+    <title>Sistema de Revisión PWA (Autor, Revisor, Editor)</title>
+    <meta name="description" content="Sistema de Revisión PWA Offline-First para artículos académicos con roles de autor, revisor y editor.">
     <link rel="manifest" href="manifest.json">
     <style>
-        /* Estilos básicos para el MVP */
         body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f4; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        /* Navegación para simular roles */
-        nav { margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        nav { margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; display: flex; gap: 10px; }
         button { padding: 10px 15px; cursor: pointer; background: #0056b3; color: white; border: none; border-radius: 4px; }
         button:hover { background: #004494; }
         button.secondary { background: #6c757d; }
-        
-        /* Clase para ocultar vistas */
+        button.success { background: #28a745; }
+        button.danger { background: #dc3545; }
         .hidden { display: none; }
+        h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; color: #333; }
+        .box { padding: 15px; border: 1px solid #ddd; background: #fafafa; border-radius: 5px; margin-bottom: 15px; }
+        .status-badge { background: #e2e3e5; padding: 3px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold; }
+        .status-enviado { background: #cce5ff; color: #004085; }
+        .status-revisado { background: #fff3cd; color: #856404; }
+        .status-publicado { background: #d4edda; color: #155724; }
+        .status-rechazado { background: #f8d7da; color: #721c24; }
+        input, select, textarea { width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 10px; box-sizing: border-box; }
         
-        h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-        
-        .status-badge {
-            background: #e2e3e5; padding: 3px 8px; border-radius: 10px; font-size: 0.8em;
-        }
+        /* Estilo para el repositorio final */
+        .repositorio-box { background: #e8f5e9; border-color: #c3e6cb; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Gestión de Artículos PWA</h1>
+<main class="container">
+    <h1>Gestión de Artículos Academicos.</h1>
     
     <nav id="role-selector">
-        <p>Selecciona tu rol (Simulación):</p>
-        <button onclick="navigate('editor')">Soy Editor</button>
-        <button onclick="navigate('revisor')">Soy Revisor</button>
         <button onclick="navigate('autor')">Soy Autor</button>
+        <button onclick="navigate('revisor')">Soy Revisor</button>
+        <button onclick="navigate('editor')">Soy Editor</button>
     </nav>
 
-    <section id="view-editor" class="view hidden">
-        <h2>Dashboard del Editor</h2>
-        <div style="margin-bottom: 10px;">
-            <input type="text" id="new-article-title" placeholder="Título del nuevo artículo" style="padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 10px;">
-            
-            <label style="font-size: 0.9em; color: #555;">Adjuntar documento (PDF):</label><br>
-            <input type="file" id="new-article-file" accept="application/pdf" style="margin-bottom: 15px; margin-top: 5px;">
-            <br>
-            
-            <button onclick="addArticle()">Registrar Artículo</button>
+    <section id="view-autor" class="view hidden">
+        <h2>Panel de Autor</h2>
+        <div class="box">
+            <h3>Subir Nuevo Artículo</h3>
+            <label for="autor-title">Título del artículo:</label>
+            <input type="text" id="autor-title" placeholder="Ej. Arquitecturas Offline-First...">
+
+            <label for="autor-file">Documento (PDF):</label>
+            <input type="file" id="autor-file" accept="application/pdf">
+            <button onclick="submitArticle()">Enviar Artículo</button>
         </div>
-        <div id="editor-article-list">
-            <p><i>Cargando lista local...</i></p>
+
+        <h3>Mis Artículos Enviados</h3>
+        <div id="autor-article-list">
+            <p><i>Cargando lista...</i></p>
         </div>
-        <br>
-        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+        <br><button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
     </section>
 
     <section id="view-revisor" class="view hidden">
         <h2>Módulo de Revisor (Offline-First)</h2>
-        <p style="color: green; font-size: 0.9em;">✅ Los datos se guardan en tu dispositivo (IndexedDB).</p>
+        <p style="color: green; font-size: 0.9em;">✅ Los borradores se guardan en tu dispositivo sin internet.</p>
         
-        <form id="review-form">
-            <label>Seleccionar Artículo a Revisar:</label>
-            <select id="review-article-select" style="padding: 8px; width: 100%; margin-bottom: 10px;">
-                <option value="">-- Cargar artículos pendientes --</option>
-            </select>
+        <div class="box">
+            <label for="review-article-select">Seleccionar Artículo (Solo "Enviados"):</label>
+            <select id="review-article-select" onchange="document.getElementById('btn-revisor-pdf').style.display = this.value ? 'inline-block' : 'none'"></select>
+            <button id="btn-revisor-pdf" class="secondary" style="display: none; margin-bottom: 10px;" onclick="viewPDF(document.getElementById('review-article-select').value)">Leer Documento PDF</button>
             
-            <label>Comentarios:</label><br>
-            <textarea id="review-comments" rows="5" style="width:100%; margin-bottom: 10px;" placeholder="Escribe tu evaluación aquí..."></textarea>
+            <label for="review-comments">Comentarios Privados (Para Autor/Editor):</label>
+            <textarea id="review-comments" rows="4" placeholder="Observaciones de la revisión..."></textarea>
             
-            <label>Decisión:</label>
-            <select id="review-decision" style="padding: 8px;">
-                <option value="pending">Pendiente</option>
-                <option value="approved">Aprobado</option>
-                <option value="rejected">Rechazado</option>
+            <label for="review-decision">Decisión de Revisión:</label>
+            <select id="review-decision">
+                <option value="Aprobado con cambios">Aprobado con cambios</option>
+                <option value="Aceptado">Aceptado</option>
+                <option value="Rechazado">Rechazado</option>
             </select>
             <br><br>
-            
-            <button type="button" onclick="saveReviewOffline()">Guardar Borrador (Offline)</button>
-            <button type="button" onclick="syncReviews()" style="background-color: #28a745;">☁️ Sincronizar/Enviar</button>
-        </form>
-        <br>
-        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+            <button onclick="saveReviewOffline()">Guardar Borrador (Offline)</button>
+            <button onclick="syncReviews()" class="success">☁️ Sincronizar/Enviar a BD</button>
+        </div>
+        <br><button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
     </section>
 
-    <section id="view-autor" class="view hidden">
-        <h2>Consultar Estado</h2>
-        <input type="text" id="author-search-id" placeholder="Nombre del artículo" style="padding: 8px;">
-        <button onclick="searchArticleStatus()">Buscar</button>
-        <div id="author-result" style="margin-top: 15px; padding: 10px; background: #e9ecef; border-radius: 4px;">
-            Esperando consulta...
+    <section id="view-editor" class="view hidden">
+        <h2>Dashboard del Editor</h2>
+        
+        <div class="box">
+            <h3>Evaluar Artículos Revisados</h3>
+            <label for="editor-article-select">Seleccionar Artículo a evaluar:</label>
+            <select id="editor-article-select" onchange="loadEditorDetails()"></select>
+            
+            <div id="editor-details" style="margin: 10px 0; padding: 10px; background: #e9ecef; border-radius: 4px; display: none;">
+                </div>
+
+            <label for="editor-comments">Comentarios Finales:</label>
+            <textarea id="editor-comments" rows="3" placeholder="Mensaje final del editor..."></textarea>
+            
+            <div style="display: flex; gap: 10px;">
+                <button onclick="makeFinalDecision('Publicado')" class="success">Aprobar y Publicar</button>
+                <button onclick="makeFinalDecision('Rechazado Definitivo')" class="danger">Rechazar Definitivamente</button>
+            </div>
         </div>
-        <br>
-        <button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
+
+        <div class="box repositorio-box">
+            <h3 style="color: #155724; margin-top: 0;">📚 Repositorio Oficial (Artículos Aceptados)</h3>
+            <div id="editor-published-list">
+                </div>
+        </div>
+
+        <h3>Estado Global de Artículos (Todos)</h3>
+        <div id="editor-global-list"></div>
+        <br><button class="secondary" onclick="navigate('home')">← Volver al inicio</button>
     </section>
-</div>
+</main>
 
 <script>
-    // --- 0. REGISTRO SERVICE WORKER (PWA) ---
+    // --- 0. REGISTRO SERVICE WORKER ---
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-                .then(reg => console.log('Service Worker registrado:', reg.scope))
-                .catch(err => console.log('Error SW:', err));
+            // --- CONFIGURACIÓN AUTOMÁTICA DEL SERVIDOR ---
+    let API_URL = 'http//${window.location.hostname}:3000/api/sync'; // Por defecto (Para tu PC)
+
+    // Si detecta que estás usando el túnel de VS Code:
+    if (window.location.hostname.includes('devtunnels.ms')) {
+        // Cambia mágicamente el puerto 5500 del túnel por el 3000
+        const backendHost = window.location.hostname.replace('5500', '3000');
+        API_URL = `https://${backendHost}/api/sync`;
+    } 
+    // Si detecta que entraste por tu IP local (Ej. el Wi-Fi de tu casa o escuela):
+    else if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        API_URL = `http://${window.location.hostname}:3000/api/sync`;
+    }
+            navigator.serviceWorker.register('./sw.js').catch(err => console.log('Error SW:', err));
         });
     }
 
-    // --- 1. BASE DE DATOS (IndexedDB) ---
+    // --- 1. BASE DE DATOS LOCAL (IndexedDB para Offline-First del Revisor) ---
     let db;
     const request = indexedDB.open("SistemaRevisionMVP", 1);
-
-    request.onupgradeneeded = function(event) {
+    request.onupgradeneeded = event => {
         db = event.target.result;
         if (!db.objectStoreNames.contains('evaluaciones')) {
             db.createObjectStore('evaluaciones', { keyPath: 'id', autoIncrement: true });
         }
     };
+    request.onsuccess = event => db = event.target.result;
 
-    request.onsuccess = function(event) {
-        db = event.target.result;
-        console.log("BD Offline Lista");
-    };
-
-    request.onerror = function(event) {
-        console.log("Error en BD:", event);
-    };
-
-    // --- 2. LÓGICA EDITOR (LocalStorage) ---
-    function addArticle() {
-        const title = document.getElementById('new-article-title').value.trim();
-        if (!title) return alert("Escribe un título");
-
-        let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+    // --- 2. LÓGICA AUTOR ---
+    function submitArticle() {
+        const title = document.getElementById('autor-title').value.trim();
+        const fileInput = document.getElementById('autor-file');
         
-        articles.push({ 
-            id: Date.now(), 
-            title: title, 
-            status: 'En Revisión' 
-        });
-        
-        localStorage.setItem('articulos', JSON.stringify(articles));
-        
-        alert("Artículo registrado correctamente.");
-        document.getElementById('new-article-title').value = ""; 
-        renderEditorList(); 
+        if (!title || !fileInput.files[0]) return alert("Por favor, ingresa un título y adjunta un PDF.");
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        // Esta función se ejecuta en cuanto el archivo termina de leerse
+        reader.onload = async function(e) {
+            const base64PDF = e.target.result;
+
+            const nuevoArticulo = { 
+                id: Date.now(), 
+                title: title, 
+                fileName: file.name,
+                fileData: base64PDF, 
+                status: 'Enviado',
+                revisorComments: '', revisorDecision: '',
+                editorComments: ''
+            };
+
+            // 1. Guardar localmente (Offline)
+            let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+            articles.push(nuevoArticulo);
+            localStorage.setItem('articulos', JSON.stringify(articles));
+
+            // 2. Intentar enviar a Node.js / MariaDB (Online)
+            let URL_POST = `http://${window.location.hostname}:3000/api/articulos`;
+            if (window.location.hostname.includes('devtunnels.ms')) {
+                URL_POST = `https://${window.location.hostname.replace('5500', '3000')}/api/articulos`;
+            }
+
+            try {
+                await fetch(URL_POST, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(nuevoArticulo)
+                });
+                console.log("Artículo guardado en la Base de Datos.");
+            } catch (error) {
+                console.warn("Sin conexión. El artículo se quedó en LocalStorage.", error);
+            }
+            
+            alert("✅ Artículo y documento procesados.");
+            document.getElementById('autor-title').value = "";
+            fileInput.value = "";
+            renderAutorList();
+        };
+
+        // Ordenamos que empiece a leer el PDF
+        reader.readAsDataURL(file);
     }
 
-    function renderEditorList() {
-        const list = document.getElementById('editor-article-list');
+    function renderAutorList() {
+        const list = document.getElementById('autor-article-list');
         const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
         
-        if (articles.length === 0) {
-            list.innerHTML = "<p>No hay artículos registrados.</p>";
-            return;
-        }
+        if (articles.length === 0) return list.innerHTML = "<p>No has enviado artículos aún.</p>";
 
-        list.innerHTML = articles.map(art => 
-            `<div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
-                <strong>${art.title}</strong> 
-                <span class="status-badge">${art.status}</span>
-             </div>`
-        ).join('');
+        list.innerHTML = articles.map(art => `
+            <div class="box" style="padding: 10px; margin-bottom: 5px;">
+                <strong>${art.title}</strong> (📄 ${art.fileName})
+                <button class="secondary" style="padding: 2px 6px; font-size: 0.8em; margin-left: 10px;" onclick="viewPDF(${art.id})">Ver PDF</button>
+                <br>
+                Estado: <span class="status-badge status-${art.status.toLowerCase().replace(' ', '-')}">${art.status}</span>
+                ${art.editorComments ? `<br><small><b>Nota del Editor:</b> ${art.editorComments}</small>` : ''}
+            </div>
+        `).join('');
     }
 
-    // --- 3. LÓGICA REVISOR (Offline-First / IndexedDB) ---
-    function loadArticlesToSelect() {
+    // --- 3. LÓGICA REVISOR ---
+    function loadPendingReviews() {
         const select = document.getElementById('review-article-select');
         const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        const pending = articles.filter(a => a.status === 'Enviado');
         
-        select.innerHTML = '<option value="">-- Seleccionar Artículo --</option>' + 
-            articles.map(a => `<option value="${a.title}">${a.title}</option>`).join('');
+        select.innerHTML = '<option value="">-- Selecciona un artículo --</option>' + 
+            pending.map(a => `<option value="${a.id}">${a.title}</option>`).join('');
     }
 
     function saveReviewOffline() {
-        const articleTitle = document.getElementById('review-article-select').value;
+        const articleId = document.getElementById('review-article-select').value;
         const comments = document.getElementById('review-comments').value.trim();
         const decision = document.getElementById('review-decision').value;
 
-        if (!articleTitle) return alert("Debes seleccionar un artículo.");
-        if (!comments) return alert("Debes escribir tus comentarios.");
+        if (!articleId || !comments) return alert("Selecciona un artículo y escribe tus comentarios.");
 
         const transaction = db.transaction(['evaluaciones'], 'readwrite');
         const store = transaction.objectStore('evaluaciones');
         
-        // REFACTORIZACIÓN META 1.7: Se agrega sync_status
         const review = {
-            articulo: articleTitle,
+            articulo_id: articleId,
             comentarios: comments,
             decision: decision,
             fecha: new Date().toISOString(),
-            sync_status: 'pending' // Bandera para la sincronización con el servidor
+            sync_status: 'pending'
         };
 
-        const request = store.add(review);
-
-        request.onsuccess = function() {
-            alert("✅ Borrador guardado localmente (IndexedDB). Estado: Pendiente de sincronización.");
+        store.add(review).onsuccess = () => {
+            alert("✅ Borrador guardado localmente (IndexedDB).");
             document.getElementById('review-comments').value = "";
-        };
-
-        request.onerror = function() {
-            alert("Error al guardar.");
         };
     }
 
-    // NUEVO INCREMENTO META 1.7: Sincronización real con backend Node.js
     async function syncReviews() {
+        // --- 1. DEFINIR LAS URLs DINÁMICAS ---
+        let base_url = `http://${window.location.hostname}:3000/api`;
+        if (window.location.hostname.includes('devtunnels.ms')) {
+            const backendHost = window.location.hostname.replace('5500', '3000');
+            base_url = `https://${backendHost}/api`;
+        }
+
+        // --- 2. PASO A: SINCRONIZAR ARTÍCULOS (AUTOR) ---
+        // Buscamos si hay artículos en localStorage que aún no están en la BD
+        let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        
+        for (let art of articles) {
+            // Intentamos enviarlos. Si ya existen, el servidor simplemente lo ignorará o dará error
+            try {
+                await fetch(`${base_url}/articulos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(art)
+                });
+            } catch (e) { console.log("Aviso: Artículo ya sincronizado o sin red."); }
+        }
+
+        // --- 3. PASO B: SINCRONIZAR REVISIONES (REVISOR) ---
         const transaction = db.transaction(['evaluaciones'], 'readwrite');
         const store = transaction.objectStore('evaluaciones');
         const getAllRequest = store.getAll();
 
         getAllRequest.onsuccess = async function() {
-            const todasLasRevisiones = getAllRequest.result;
+            const pendientes = getAllRequest.result.filter(r => r.sync_status === 'pending');
             
-            // Filtramos solo los registros que no se han enviado a MariaDB
-            const pendientes = todasLasRevisiones.filter(r => r.sync_status === 'pending');
-
-            if (pendientes.length === 0) {
-                return alert("No hay revisiones pendientes de sincronizar.");
-            }
-
-            try {
-                alert(`🚀 Iniciando sincronización de ${pendientes.length} revisiones al servidor...`);
-                
-                // Enviamos los datos al backend (Node.js)
-                const response = await fetch('http://localhost:3000/api/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(pendientes)
-                });
-
-                if (response.ok) {
-                    // Si el servidor responde 200 OK, actualizamos IndexedDB a 'synced'
-                    const updateTx = db.transaction(['evaluaciones'], 'readwrite');
-                    const updateStore = updateTx.objectStore('evaluaciones');
-                    
-                    pendientes.forEach(rev => {
-                        rev.sync_status = 'synced';
-                        updateStore.put(rev); // Actualiza el registro local
+            // Si no hay revisiones, igual procedemos a descargar para refrescar la UI
+            if (pendientes.length > 0) {
+                try {
+                    const response = await fetch(`${base_url}/sync`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(pendientes)
                     });
-                    
-                    alert("☁️ ¡Sincronización exitosa! Datos guardados en MariaDB.");
-                } else {
-                    throw new Error("El servidor rechazó los datos.");
+
+                    if (response.ok) {
+                        const updateTx = db.transaction(['evaluaciones'], 'readwrite');
+                        const updateStore = updateTx.objectStore('evaluaciones');
+                        
+                        pendientes.forEach(rev => {
+                            rev.sync_status = 'synced';
+                            updateStore.put(rev);
+                        });
+                        console.log("☁️ Revisiones sincronizadas.");
+                    }
+                } catch (error) {
+                    console.error("Error sincronizando revisiones: ", error);
                 }
-            } catch (error) {
-                console.error("Fallo de sincronización:", error);
-                alert("❌ Error de red o el servidor Node.js está apagado. Tus datos siguen seguros localmente. Intenta más tarde.");
             }
+
+            // --- 4. PASO C: DESCARGAR LA VERDAD DE LA BD (EL REFRESH) ---
+            // Esto es lo que hace que tu laptop y iPhone se pongan de acuerdo
+            await descargarArticulosDeBD(); 
+            
+            alert("✅ Sincronización Total Completa. Los datos están actualizados.");
+            if(typeof loadPendingReviews === 'function') loadPendingReviews(); 
         };
     }
 
-    // --- 4. LÓGICA AUTOR (Búsqueda simple) ---
-    function searchArticleStatus() {
-        const query = document.getElementById('author-search-id').value.toLowerCase();
+    // --- 4. LÓGICA EDITOR ---
+    function loadEditorView() {
+        const select = document.getElementById('editor-article-select');
+        const globalList = document.getElementById('editor-global-list');
+        const publishedList = document.getElementById('editor-published-list'); 
         const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
-        const resultBox = document.getElementById('author-result');
+        
+        // Cargar select (Solo los que ya revisó el revisor)
+        const revisados = articles.filter(a => a.status === 'Revisado');
+        select.innerHTML = '<option value="">-- Selecciona un artículo --</option>' + 
+            revisados.map(a => `<option value="${a.id}">${a.title}</option>`).join('');
+            
+        document.getElementById('editor-details').style.display = 'none';
 
-        const found = articles.find(a => a.title.toLowerCase().includes(query));
-
-        if (found) {
-            resultBox.innerHTML = `
-                <strong>Artículo:</strong> ${found.title}<br>
-                <strong>Estado:</strong> ${found.status}<br>
-                <small>ID: ${found.id}</small>
-            `;
-            resultBox.style.background = "#d4edda"; 
+        // Cargar Repositorio (Solo "Publicado") - NUEVA LÓGICA
+        const publicados = articles.filter(a => a.status === 'Publicado');
+        if(publicados.length === 0) {
+            publishedList.innerHTML = "<p>Aún no hay artículos publicados en el repositorio.</p>";
         } else {
-            resultBox.innerHTML = "No se encontró ningún artículo con ese nombre.";
-            resultBox.style.background = "#f8d7da"; 
+            publishedList.innerHTML = publicados.map(art => `
+                <div style="padding: 10px; border-bottom: 1px solid #c3e6cb; margin-bottom: 5px;">
+                    <strong>${art.title}</strong> (📄 ${art.fileName})<br>
+                    <small><b>Comentario Final:</b> ${art.editorComments}</small>
+                </div>
+            `).join('');
+        }
+        // Cargar tabla global
+        if(articles.length === 0) return globalList.innerHTML = "<p>No hay artículos en el sistema.</p>";
+        globalList.innerHTML = articles.map(art => `
+            <div style="padding: 5px; border-bottom: 1px solid #ccc; display:flex; justify-content:space-between; align-items: center;">
+                <span>${art.title}</span>
+                <div>
+                    <span class="status-badge status-${art.status.toLowerCase().replace(' ', '-')}">${art.status}</span>
+                    <button class="danger" style="padding: 2px 6px; font-size: 0.8em; margin-left: 10px;" onclick="deleteArticle(${art.id})">🗑️ Borrar</button>
+                </div>
+            </div>
+        `).join('');
+
+        // Función para enviar la decisión del Editor a la Base de Datos
+    async function syncEditorDecision(id, nuevoEstado, comentarios) {
+        let URL_PUT = `http://${window.location.hostname}:3000/api/articulos/${id}`;
+        
+        if (window.location.hostname.includes('devtunnels.ms')) {
+            URL_PUT = `https://${window.location.hostname.replace('5500', '3000')}/api/articulos/${id}`;
+        }
+
+        try {
+            await fetch(URL_PUT, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: nuevoEstado, editorComments: comentarios })
+            });
+        } catch (error) {
+            console.warn("Modo Offline: La decisión del editor solo se guardó localmente.");
+        }
+    }
+    }
+
+    function loadEditorDetails() {
+        const id = document.getElementById('editor-article-select').value;
+        const detailsBox = document.getElementById('editor-details');
+        
+        if(!id) {
+            detailsBox.style.display = 'none';
+            return;
+        }
+
+        const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        const art = articles.find(a => a.id == id);
+        
+        detailsBox.style.display = 'block';
+        detailsBox.innerHTML = `
+            <b>Sugerencia del Revisor:</b> ${art.revisorDecision}<br>
+            <b>Comentarios del Revisor:</b> <i>"${art.revisorComments}"</i>
+        `;
+    }
+
+    // --- 1. FUNCIÓN QUE CONECTA CON LA BASE DE DATOS ---
+    async function syncEditorDecision(id, nuevoEstado, comentarios) {
+        let URL_PUT = `http://${window.location.hostname}:3000/api/articulos/${id}`;
+        
+        if (window.location.hostname.includes('devtunnels.ms')) {
+            URL_PUT = `https://${window.location.hostname.replace('5500', '3000')}/api/articulos/${id}`;
+        }
+
+        try {
+            await fetch(URL_PUT, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: nuevoEstado, editorComments: comentarios })
+            });
+            console.log("Decisión del editor enviada a la BD.");
+        } catch (error) {
+            console.warn("Modo Offline: La decisión se quedó local.", error);
+        }
+    }
+
+    // --- 2. FUNCIÓN DEL BOTÓN ---
+    function makeFinalDecision(decision) {
+        const id = document.getElementById('editor-article-select').value;
+        const comments = document.getElementById('editor-comments').value.trim();
+
+        if(!id) return alert("Selecciona un artículo para evaluar.");
+        if(!comments) return alert("Debes dejar un comentario final para el autor.");
+
+        let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        let artIndex = articles.findIndex(a => a.id == id);
+        
+        if(artIndex !== -1) {
+            // Guarda en memoria local
+            articles[artIndex].status = decision;
+            articles[artIndex].editorComments = comments;
+            localStorage.setItem('articulos', JSON.stringify(articles));
+            
+            // Envía a la base de datos (AHORA SÍ ENCONTRARÁ LA FUNCIÓN DE ARRIBA)
+            syncEditorDecision(id, decision, comments);
+            
+            alert(`✅ Artículo marcado como ${decision}.`);
+            document.getElementById('editor-comments').value = "";
+            loadEditorView(); 
         }
     }
 
     // --- 5. NAVEGACIÓN ---
     function navigate(viewName) {
         document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
-        document.getElementById('role-selector').classList.add('hidden');
+        document.getElementById('role-selector').style.display = 'none';
 
         if (viewName === 'home') {
-            document.getElementById('role-selector').classList.remove('hidden');
+            document.getElementById('role-selector').style.display = 'flex';
         } else {
-            const viewId = `view-${viewName}`;
-            const viewEl = document.getElementById(viewId);
-            if(viewEl) viewEl.classList.remove('hidden');
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
             
-            // Cargar datos específicos al entrar a la vista
-            if (viewName === 'editor') renderEditorList();
-            if (viewName === 'revisor') loadArticlesToSelect();
+            if (viewName === 'autor') renderAutorList();
+            if (viewName === 'revisor') loadPendingReviews();
+            if (viewName === 'editor') loadEditorView();
         }
     }
+    // --- 6. UTILIDADES ---
+    function deleteArticle(id) {
+        if(confirm("¿Estás seguro de que deseas borrar este artículo de tu dispositivo?")) {
+            let articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+            
+            // Filtramos la lista para dejar todos los artículos EXCEPTO el que tiene este ID
+            articles = articles.filter(a => a.id != id);
+            
+            // Guardamos la nueva lista limpia en el LocalStorage
+            localStorage.setItem('articulos', JSON.stringify(articles));
+            
+            // Recargamos la vista del editor para que el artículo desaparezca de la pantalla
+            loadEditorView(); 
+        }
+    }
+    function viewPDF(id) {
+        const articles = JSON.parse(localStorage.getItem('articulos') || '[]');
+        const art = articles.find(a => a.id == id);
+        
+        if (art && art.fileData) {
+            // Creamos un enlace invisible y lo "hacemos clic" automáticamente
+            const link = document.createElement('a');
+            link.href = art.fileData;
+            link.download = art.fileName; // Obliga al navegador móvil/PC a abrir su visor de PDF
+            link.click();
+        } else {
+            alert("No se encontró el contenido del PDF.");
+        }
+    }
+    async function descargarArticulosDeBD() {
+        // Calculamos la URL dinámica, asumiendo que tu backend tiene una ruta /api/articulos
+        let URL_GET = `http://${window.location.hostname}:3000/api/articulos`;
+        if (window.location.hostname.includes('devtunnels.ms')) {
+            URL_GET = `https://${window.location.hostname.replace('5500', '3000')}/api/articulos`;
+        }
+
+        try {
+            const response = await fetch(URL_GET);
+            if (response.ok) {
+                const articulosBD = await response.json();
+                // Actualizamos la memoria local con los datos reales de PHP/MariaDB
+                localStorage.setItem('articulos', JSON.stringify(articulosBD));
+                
+                // Refrescamos las vistas para que aparezcan en pantalla
+                if(document.getElementById('autor-list')) renderAutorList();
+                if(document.getElementById('global-article-list')) loadEditorView();
+                console.log("✅ Datos sincronizados con el servidor.");
+            }
+        } catch (error) {
+            console.warn("Modo Offline: No se pudo conectar a la BD, usando datos locales.", error);
+        }
+    }
+
+    // Ejecutar inmediatamente cuando se abre la página
+    window.addEventListener('load', descargarArticulosDeBD);
 </script>
 
 </body>

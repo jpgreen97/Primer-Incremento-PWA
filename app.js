@@ -101,7 +101,6 @@
         const transaction = db.transaction(['evaluaciones'], 'readonly');
         const store = transaction.objectStore('evaluaciones');
         const getAll = store.getAll();
-
         getAll.onsuccess = function() {
             console.log("Datos listos para enviar al servidor:", getAll.result);
             alert(`Hay ${getAll.result.length} revisiones guardadas localmente listas para enviarse.`);
